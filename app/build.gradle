@@ -1,0 +1,124 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'jacoco'
+}
+
+android {
+    namespace 'com.example.myapplication'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.example.myapplication"
+        minSdk 24
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        debug {
+            testCoverageEnabled = true
+        }
+        release {
+            testCoverageEnabled = true
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    testImplementation("org.junit.jupiter:junit-jupiter:5.7.1")
+
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
+    implementation(project(":lib1"))
+    implementation(project(":lib2"))
+    implementation 'androidx.core:core-ktx:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.8.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}
+
+jacoco {
+    toolVersion = "0.8.8"
+
+}
+
+project.afterEvaluate {
+    if (android.hasProperty("applicationVariants")) {
+        android.applicationVariants.all { variant ->
+            println(variant.name)
+            setupAndroidReporting(variant.name)
+        }
+    } else if (android.hasProperty("libraryVariants")) {
+        android.libraryVariants.all { variant ->
+            setupAndroidReporting(variant.name)
+        }
+    }
+}
+
+def setupAndroidReporting(variantName) {
+    tasks.withType(Test) {
+        // Whether or not classes without source location should be instrumented
+        jacoco.includeNoLocationClasses = true
+        jacoco.excludes = ['jdk.internal.*']
+    }
+
+
+    def capitalizedVariantName = variantName.capitalize()
+    def testTaskName = "test${capitalizedVariantName}UnitTest"
+    println(testTaskName)
+    // Create coverage task of form 'testFlavorTypeCoverage'
+    tasks.register("${testTaskName}Coverage", JacocoReport) {
+        group = "Reporting"
+        description = "Generate Jacoco coverage reports on the ${capitalizedVariantName} build."
+
+        reports {
+            xml.required.set(true)
+            xml.destination(file("${buildDir}/coverage-report/jacoco-report.xml"))
+            html.destination(file("${buildDir}/coverage-report"))
+        }
+
+        def fileFilter = [
+            '**/*Binding*.*',
+        ]
+
+        def javaTree = fileTree(dir: "${project.buildDir}/intermediates/javac/${variantName}/classes", excludes: fileFilter)
+        def kotlinTree = fileTree(dir: "${project.buildDir}/tmp/kotlin-classes/${variantName}", excludes: fileFilter)
+        classDirectories.from = files([javaTree], [kotlinTree])
+        executionData.from = files("${project.buildDir}/outputs/unit_test_code_coverage/debugUnitTest/${testTaskName}.exec")
+        def coverageSourceDirs = [
+            "${project.buildDir}/src/main/java",
+            "${project.buildDir}/src/${variantName}/java",
+            "${project.buildDir}/src/main/kotlin",
+            "${project.buildDir}/src/${variantName}/kotlin",
+        ]
+
+        sourceDirectories.setFrom(files(coverageSourceDirs))
+        additionalSourceDirs.setFrom(files(coverageSourceDirs))
+
+        outputs.cacheIf { true }
+        inputs.dir(file("${project.buildDir}/outputs/unit_test_code_coverage/debugUnitTest/"))
+        outputs.file("${buildDir}/coverage-report/jacoco-report.xml")
+    }
+
+    def testTask = project.tasks.findByName(testTaskName)
+    def coverageTask = project.tasks.findByName("${testTaskName}Coverage")
+    if (testTask != null) {
+        coverageTask.mustRunAfter(testTask)
+        testTask.finalizedBy(coverageTask)
+    }
+}
